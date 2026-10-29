@@ -1,0 +1,8 @@
+{
+  "name": "Remix GRC-Goal — Pilotage GRC pour PME \u0026 TPE",
+  "description": "Plateforme SaaS B2B et prototype de Gouvernance, Gestion des Risques, SoA dynamique ISO 27001:2022 et plans d\u0027action pour PME/TPE.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
