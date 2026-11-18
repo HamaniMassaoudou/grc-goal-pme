@@ -1,363 +1,443 @@
-# Guide d'Installation et de Lancement - GRC-Goal-PME
+# Guide d'Installation, Déploiement et Exploitation — GRC-Goal-PME
 
-Ce guide explique comment installer et lancer l'application GRC-Goal-PME avec le backend Django et le frontend React.
-
----
-
-## Prérequis
-
-- **Python 3.10+** (pour le backend)
-- **Node.js 18+** (pour le frontend)
-- **npm** ou **yarn** (gestionnaire de paquets Node.js)
-- **Git** (optionnel, pour cloner le projet)
+Ce guide technique détaille pas-à-pas la mise en œuvre, la configuration et le lancement de l'application **GRC-Goal-PME** avec son backend Python / Django et son frontend React 19.
 
 ---
 
-## Structure du Projet
+## 1. Prérequis Système
+
+| Composant | Version Minimale Recommandée | Rôle |
+|---|---|---|
+| **Python** | 3.10+ (recommandé 3.12+) | Exécution du backend Django, API REST et ORM SQLite |
+| **Node.js** | 18+ (recommandé 22.x LTS) | Bundling, exécution du frontend React & Vite |
+| **npm** | 9+ (inclus avec Node.js) | Gestion des packages frontend |
+| **Git** | 2.x | Suivi de versions du code source |
+
+---
+
+## 2. Structure Réelle du Projet
+
+Le projet sépare strictement le backend Python/Django et le frontend React tout en conservant une structure claire et exploitable :
 
 ```
 grc-goal-pme/
-├── frontend/              # Application React (existante)
-│   ├── src/
-│   ├── package.json
-│   └── vite.config.ts
-├── backend/               # Application Django (nouveau)
-│   ├── apps/              # Applications Django
-│   ├── grc_config/        # Configuration Django
-│   ├── manage.py
-│   ├── requirements.txt
-│   └── venv/              # Environnement virtuel Python
-├── docs/                  # Documentation
-├── .env.example           # Exemple de configuration
-└── README.md
+├── backend/                     # Serveur d'API & Persistance Django
+│   ├── apps/
+│   │   ├── actions/             # Actions correctives & clôtures
+│   │   ├── assets/              # Inventaire des actifs
+│   │   ├── core/                # Commandes système (load_demo_data), preuves scellées
+│   │   ├── governance/          # Collaborateurs & gouvernance
+│   │   ├── notifications/       # Notifications & alertes
+│   │   ├── organizations/       # Organisations & isolations
+│   │   ├── risks/               # Risques ISO 27005 (Score, Niveaux)
+│   │   ├── soa/                 # SoA ISO 27001 (93 contrôles) + pièces jointes
+│   │   ├── testing/             # Fiches de test & protocole B14
+│   │   └── users/               # Utilisateurs, Authentification JWT, RBAC & Audit
+│   ├── grc_config/              # Configuration Django (settings, urls, wsgi)
+│   ├── db.sqlite3               # Base de données SQLite3
+│   ├── manage.py                # Point d'entrée CLI Django
+│   ├── media/                   # Stockage des fichiers uploadés (preuves SoA)
+│   ├── requirements.txt         # Dépendances Python
+│   └── venv/                    # Environnement virtuel Python (local)
+│
+├── frontend/                    # Application Frontend React 19 + TypeScript
+│   ├── src/                     # Code source de l'interface React
+│   │   ├── components/          # 35+ composants UI modulaires (lazy-loaded)
+│   │   ├── services/
+│   │   │   ├── api.ts           # Client REST HTTP avec refresh token automatique
+│   │   │   ├── apiAdapter.ts    # Adaptateur snake_case ↔ camelCase
+│   │   │   ├── gemini.ts        # Assistant IA d'analyse GRC (Google GenAI)
+│   │   │   ├── pdfExport.ts     # Moteur d'export PDF (jsPDF)
+│   │   │   ├── security.ts      # Utilitaires de sécurité
+│   │   │   └── storage.ts       # Gestion de l'état GRC (localStorage fallback)
+│   │   ├── types/               # Typages TypeScript stricts
+│    │   ├── data/                # Données initiales et rôles
+│   │   ├── App.tsx              # Composant racine & orchestrateur d'état
+│   │   ├── main.tsx             # Point d'entrée React
+│   │   └── index.css            # Styles Tailwind CSS v4
+│   ├── index.html               # Point d'entrée HTML
+│   ├── package.json             # Dépendances et scripts frontend
+│   ├── tsconfig.json            # Configuration TypeScript
+│   ├── vite.config.ts           # Configuration du bundler Vite
+│   └── .env.local               # Configuration locale (VITE_API_URL)
+│
+├── docs/                        # Documentation technique et guides
+├── package.json                 # Raccourcis racine de build et dev
+├── README.md                    # Documentation générale du projet
+└── .gitignore                   # Fichiers ignorés par Git
 ```
 
 ---
 
-## Installation du Backend Django
+## 3. Installation et Configuration du Backend Django
 
-### 1. Créer l'environnement virtuel Python
+### Étape 3.1 — Préparation de l'environnement virtuel
 
-```bash
+Dans un terminal, positionnez-vous dans le répertoire `backend/` :
+
+```powershell
 cd backend
 python -m venv venv
 ```
 
-### 2. Activer l'environnement virtuel
+Activez l'environnement virtuel :
+- **Sous Windows (PowerShell) :**
+  ```powershell
+  .\venv\Scripts\activate
+  ```
+- **Sous Linux / macOS :**
+  ```bash
+  source venv/bin/activate
+  ```
 
-**Windows:**
-```bash
-venv\Scripts\activate
-```
+### Étape 3.2 — Installation des dépendances Python
 
-**Linux/Mac:**
-```bash
-source venv/bin/activate
-```
-
-### 3. Installer les dépendances Python
-
-```bash
+```powershell
 pip install -r requirements.txt
 ```
 
-### 4. Configurer les variables d'environnement
+Les packages clés installés comprennent :
+- `django>=5.0,<5.1`
+- `djangorestframework>=3.14,<3.15`
+- `djangorestframework-simplejwt>=5.3,<5.4`
+- `django-cors-headers>=4.3,<4.4`
+- `django-filter>=23.5,<24.0`
+- `python-dotenv>=1.0,<1.1`
+- `Pillow>=10.0,<11.0` (support des images et fichiers uploadés)
+- `reportlab>=4.1,<4.2` (génération PDF)
 
-Créez un fichier `.env` dans le dossier `backend/` :
+### Étape 3.3 — Configuration de l'environnement (.env)
 
-```bash
-cd backend
-copy .env.example .env
-```
-
-Éditez le fichier `.env` selon vos besoins :
-
+Créez ou vérifiez le fichier `backend/.env` :
 ```env
 DEBUG=True
-SECRET_KEY=django-insecure-change-this-in-production
-ALLOWED_HOSTS=localhost,127.0.0.1
-CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+DJANGO_SECRET_KEY=django-insecure-xyz-+f$h)*25!*8#$&h_3b#$yn%1vf07)@(kr&s7-us4fobb6a
+ALLOWED_HOSTS=localhost,127.0.0.1,testserver
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174
 ```
 
-### 5. Exécuter les migrations Django
+### Étape 3.4 — Application des migrations SQLite
 
-```bash
+Initialisez le schéma relationnel de la base de données :
+```powershell
 python manage.py migrate
 ```
 
-### 6. Charger les données de démonstration
+> **Note importante :** Les migrations récentes incluent :
+> - `soa.0002_soacontrol_evidence_file` : Ajout du champ FileField pour les pièces jointes de preuves SoA (PDF/images)
+> - `users.0004_remove_useraccount_organization_id_and_more` : Remplacement de `organization_id` (CharField) par `organization` (ForeignKey vers Organization) pour une meilleure intégrité référentielle
 
-```bash
+### Étape 3.5 — Chargement des données de démonstration
+
+Chargez le jeu complet de données de test sans doublons :
+```powershell
 python manage.py load_demo_data
 ```
 
-Cette commande charge :
-- 6 rôles utilisateurs (Super Admin, Org Admin, RSSI, Risk Owner, Auditor, Viewer)
-- 1 organisation de démonstration
-- 6 comptes utilisateurs (mot de passe par défaut: `PmeSecure2026!`)
-- 6 collaborateurs
-- 6 actifs informationnels
-- 6 risques
-- 5 actions correctives
-- 3 contrôles SoA
-- Paramètres de sécurité
+Cette commande initialise de manière idempotente :
+- **6 rôles RBAC :** Super Administrateur, Admin Organisation, RSSI, Risk Owner, Auditeur, Lecteur.
+- **1 organisation pilote :** *PME Démonstration (Sirba Communication SARL)*.
+- **6 comptes utilisateurs :** avec mot de passe universel haché `PmeSecure2026!`.
+- **6 profils collaborateurs** associés.
+- **6 actifs du système d'information** avec valorisation de criticité.
+- **6 risques majeurs** avec matrice d'impact/probabilité et plans de traitement.
+- **5 actions correctives** avec suivi des statuts, commentaires et échéances.
+- **93 contrôles SoA ISO 27001:2022** couvrant l'intégralité des 4 domaines officiels (A.5, A.6, A.7, A.8).
+- **1 protocole d'homologation & 2 fiches d'évaluation B14**.
+- **6 notifications opérationnelles & 4 événements d'audit initiaux**.
 
-### 7. Créer un superutilisateur Django (optionnel)
+### Étape 3.6 — Démarrage du serveur Django
 
-Pour accéder à l'interface d'administration Django :
-
-```bash
-python manage.py createsuperuser
+```powershell
+python manage.py runserver 8000
 ```
-
-Suivez les instructions pour créer un compte administrateur.
+- API REST accessible à l'adresse : **`http://127.0.0.1:8000/api/`**
+- Administration Django : **`http://127.0.0.1:8000/admin/`**
 
 ---
 
-## Installation du Frontend React
+## 4. Installation et Démarrage du Frontend React
 
-### 1. Installer les dépendances Node.js
+Ouvrez un **deuxième terminal** et placez-vous dans le répertoire `frontend/` :
 
-```bash
+### Étape 4.1 — Installation des dépendances Node.js
+
+```powershell
 cd frontend
 npm install
 ```
 
-### 2. Configurer les variables d'environnement
+Les packages clés installés comprennent :
+- `react@^19.0.1` et `react-dom@^19.0.1` (Framework UI)
+- `typescript@^7.0.2` (Typage strict)
+- `vite@^8.3.0` (Bundler ultra-rapide)
+- `tailwindcss@^4.3.3` (Framework CSS utility-first)
+- `lucide-react@^0.546.0` (Bibliothèque d'icônes)
+- `motion@^12.23.24` (Animations fluides)
+- `jspdf@^4.2.1` (Génération PDF côté client)
+- `@google/genai@^2.4.0` (Assistant IA d'analyse GRC)
+- `express@^4.21.2` (Serveur HTTP pour production)
 
-Créez un fichier `.env.local` dans le dossier `frontend/` :
+### Étape 4.2 — Configuration de l'API cible
 
-```bash
-cd frontend
-copy .env.example .env.local
-```
-
-Éditez le fichier `.env.local` :
-
+Le frontend dispose d'un fichier `.env.local` à la racine pointant vers le backend Django :
 ```env
-VITE_API_URL=http://localhost:8000/api
-GEMINI_API_KEY=votre_clé_api_gemini  # Optionnel
+VITE_API_URL=http://127.0.0.1:8000/api
 ```
 
----
+### Étape 4.3 — Lancement du serveur Vite
 
-## Lancement de l'Application
-
-### Lancer le Backend Django
-
-```bash
-cd backend
-venv\Scripts\activate  # Windows
-python manage.py runserver
-```
-
-Le backend sera accessible à : `http://localhost:8000`
-
-- **API REST:** `http://localhost:8000/api/`
-- **Admin Django:** `http://localhost:8000/admin/`
-
-### Lancer le Frontend React
-
-Dans un nouveau terminal :
-
-```bash
-cd frontend
+```powershell
 npm run dev
 ```
 
-Le frontend sera accessible à : `http://localhost:3000`
+L'application web s'ouvre sur **`http://127.0.0.1:5173`** (ou le port indiqué par Vite).
 
 ---
 
-## Comptes de Démonstration
+## 5. Comptes de Démonstration et Personas
 
-Les comptes suivants sont créés automatiquement avec la commande `load_demo_data` :
+Tous les comptes ont pour mot de passe : **`PmeSecure2026!`**
 
-| Email | Mot de passe | Rôles | Organisation |
-|-------|-------------|-------|--------------|
-| massaoudhamani10@gmail.com | PmeSecure2026! | Super Admin, RSSI | PME Démonstration |
-| direction@sirbacom.ne | PmeSecure2026! | Org Admin, Risk Owner | Sirba Communication |
-| mentor.grc@apsi.ne | PmeSecure2026! | Auditor | Programme Cybersécurité Niger |
-| a.diallo@sirbacom.ne | PmeSecure2026! | Risk Owner | Sirba Communication |
-| i.moussa@sirbacom.ne | PmeSecure2026! | Viewer | Sirba Communication |
-| suspendu@demo.ne | PmeSecure2026! | Viewer (suspendu) | PME Démonstration |
+| Utilisateur | Email | Profil / Rôle | Capacités principales |
+|---|---|---|---|
+| **Hamani Massaoudou** | `massaoudhamani10@gmail.com` | **Super Administrateur & RSSI** | Accès universel, administration IAM, gestion des politiques, édition de tous les modules |
+| **Abdoul Salam Issifi** | `direction@sirbacom.ne` | **Admin Organisation & Risk Owner** | Direction de la PME, validation des risques d'entreprise et approbation des budgets d'action |
+| **Aboubacar Yacouba Mai Birni** | `mentor.grc@apsi.ne` | **Auditeur Externe (APSI-NE)** | Évaluation de conformité SoA, consultation du protocole B14, audit des journaux de sécurité |
+| **Aïchatou Diallo** | `a.diallo@sirbacom.ne` | **Propriétaire de Risque** | Gestion des risques pôle clients, déclarations d'incidents et mise à jour des actions |
+| **Ibrahim Moussa** | `i.moussa@sirbacom.ne` | **Lecteur (Viewer)** | Consultation en lecture seule des tableaux de bord et indicateurs de sécurité |
+| **Compte Suspendu** | `suspendu@demo.ne` | **Lecteur Désactivé** | Test du blocage HTTP 403 Forbidden sur compte suspendu |
 
-**⚠️ Important:** Changez ces mots de passe en production !
-
----
-
-## Endpoints API Principaux
-
-### Authentification
-
-- `POST /api/auth/users/login/` - Connexion utilisateur
-- `POST /api/auth/users/logout/` - Déconnexion utilisateur
-
-### Utilisateurs et Rôles
-
-- `GET /api/auth/users/` - Liste des utilisateurs
-- `POST /api/auth/users/` - Créer un utilisateur
-- `GET /api/auth/roles/` - Liste des rôles
-- `GET /api/auth/sessions/` - Sessions utilisateur
-- `GET /api/auth/audit-logs/` - Journaux d'audit
-
-### Organisations
-
-- `GET /api/organizations/` - Liste des organisations
-- `POST /api/organizations/` - Créer une organisation
-
-### Collaborateurs
-
-- `GET /api/collaborators/` - Liste des collaborateurs
-- `POST /api/collaborators/` - Inviter un collaborateur
-
-### Actifs
-
-- `GET /api/assets/` - Liste des actifs
-- `POST /api/assets/` - Créer un actif
-
-### Risques
-
-- `GET /api/risks/` - Liste des risques
-- `POST /api/risks/` - Créer un risque
-
-### SoA (Statement of Applicability)
-
-- `GET /api/soa-controls/` - Liste des contrôles SoA
-- `POST /api/soa-controls/` - Créer un contrôle SoA
-
-### Actions Correctives
-
-- `GET /api/actions/` - Liste des actions
-- `POST /api/actions/` - Créer une action
-
-### Notifications
-
-- `GET /api/notifications/` - Liste des notifications
-- `PATCH /api/notifications/{id}/` - Marquer comme lu
+> 💡 **Bascule rapide de profil (Persona Switcher) :**  
+> Dans l'application, l'icône de profil en haut à droite permet de basculer instantanément d'un persona à un autre sans ressaisir le mot de passe, en générant un jeton JWT valide auprès du backend Django.
 
 ---
 
-## Développement
+## 6. Vérification de la Qualité et Tests
 
-### Ajouter de nouvelles migrations
+### 6.1 Tests automatisés du Backend Django
 
-Après avoir modifié les modèles Django :
-
-```bash
+Exécutez la suite complète de 12 tests automatisés :
+```powershell
 cd backend
-python manage.py makemigrations
-python manage.py migrate
+.\venv\Scripts\activate
+python manage.py test apps
+```
+**Résultat attendu :**
+```
+Ran 12 tests in ~15-20s
+OK
 ```
 
-### Recharger les données de démonstration
-
-```bash
-cd backend
-python manage.py load_demo_data
+### 6.2 Contrôle de Typage TypeScript
+```powershell
+npm run lint
 ```
+*(Résultat : 0 erreur de typage).*
 
-### Réinitialiser la base de données
+### 6.3 Compilation de Production Frontend
+```powershell
+npm run build
+```
+*(Résultat : Bundle optimisé généré dans `dist/` en ~2 à 3 secondes).*
 
-⚠️ **Attention : Cela supprime toutes les données**
+---
 
-```bash
+## 7. Résolution des Problèmes Courants (Troubleshooting)
+
+### Problème 1 : Erreur CORS dans le navigateur
+- **Cause :** L'URL du frontend n'est pas répertoriée dans `CORS_ALLOWED_ORIGINS`.
+- **Solution :** Vérifiez `backend/.env` ou `backend/grc_config/settings.py`. Les origines autorisées par défaut sont `http://localhost:5173`, `http://127.0.0.1:5173`, `http://localhost:3000`, `http://127.0.0.1:3000`.
+
+### Problème 2 : Port 8000 déjà utilisé
+- **Solution :** Spécifiez un autre port pour Django, par exemple :
+  ```powershell
+  python manage.py runserver 8080
+  ```
+  Et mettez à jour `.env.local` du frontend :
+  ```env
+  VITE_API_URL=http://127.0.0.1:8080/api
+  ```
+
+### Problème 3 : Réinitialisation complète de la base SQLite
+Si vous souhaitez repartir d'une base vierge avec les données de démonstration :
+```powershell
 cd backend
-rm db.sqlite3
+Remove-Item db.sqlite3 -Force
 python manage.py migrate
 python manage.py load_demo_data
 ```
 
+### Problème 4 : Upload de fichiers échoue (SoA preuves)
+- **Cause :** Le dossier `backend/media/` n'existe pas ou n'a pas les permissions d'écriture.
+- **Solution :** Assurez-vous que le dossier `media/` existe dans `backend/` et est accessible en écriture. Django le créera automatiquement lors du premier upload si les permissions sont correctes.
+
 ---
 
-## Déploiement en Production
+## 8. Architecture API et Sécurité
 
-### Configuration de production
+### 8.1 Authentification JWT
+Le backend utilise **djangorestframework-simplejwt** avec les caractéristiques suivantes :
+- **Access Token Lifetime :** 2 heures
+- **Refresh Token Lifetime :** 7 jours
+- **Rotation des refresh tokens :** Activée (sécurité renforcée)
+- **Blacklist après rotation :** Activée (prévention de réutilisation)
+- **Algorithme de signature :** HS256
+- **Header d'authentification :** `Authorization: Bearer <token>`
 
-1. **Modifier `backend/.env` :**
+Le frontend gère automatiquement le refresh des tokens via le service `api.ts`.
 
+### 8.2 CORS Configuration
+Les origines frontend autorisées par défaut sont :
+- `http://localhost:3000` et `http://127.0.0.1:3000`
+- `http://localhost:5173` et `http://127.0.0.1:5173`
+- `http://localhost:5174` et `http://127.0.0.1:5174`
+
+Pour ajouter une nouvelle origine, modifiez `backend/.env` ou `backend/grc_config/settings.py`.
+
+### 8.3 Modèles de Données Récents
+**UserAccount :**
+- Remplacement de `organization_id` (CharField) par `organization` (ForeignKey vers Organization)
+- Meilleure intégrité référentielle et support des requêtes relationnelles
+- Maintien de `organization_ids` (JSONField) pour le support multi-organisations
+
+**SoAControl :**
+- Ajout de `evidence_file` (FileField) pour les pièces jointes de preuves
+- Upload path : `soa_evidences/%Y/%m/`
+- Support des fichiers PDF et images
+
+### 8.4 Sérialiseurs API
+Les serializers ont été mis à jour pour gérer les nouveaux champs :
+- `UserAccountSerializer` : inclut `organization` et `organization_id` (read-only)
+- `UserAccountCreateSerializer` : accepte `organization_id` et le convertit en ForeignKey
+- `UserAccountUpdateSerializer` : gère la mise à jour de l'organisation
+- `SoAControlCreateSerializer` : inclut `evidence_file` pour l'upload de preuves
+
+---
+
+## 9. Nouvelles Fonctionnalités
+
+### 9.1 Assistant IA GRC (Gemini)
+Le frontend intègre un assistant IA basé sur Google GenAI (`services/gemini.ts`) pour :
+- Analyse des risques et recommandations de traitement
+- Suggestions d'amélioration de la conformité SoA
+- Génération de descriptions de contrôles
+- Aide à la rédaction de plans d'actions
+
+### 9.2 Export PDF Avancé
+Le service `services/pdfExport.ts` utilise jsPDF pour générer :
+- Rapports SoA complets avec les 93 contrôles
+- Fiches d'évaluation B14
+- Rapports de risques
+- Plans d'actions correctives
+
+### 9.3 Gestion des Preuves SoA
+Les contrôles SoA peuvent maintenant inclure des pièces jointes :
+- Upload de fichiers PDF et images via FileField
+- Stockage organisé par date (`soa_evidences/%Y/%m/`)
+- Références de preuves textuelles et fichiers
+
+### 9.4 Isolation Organisationnelle Renforcée
+La relation ForeignKey entre UserAccount et Organization assure :
+- Intégrité référentielle stricte
+- Suppression en cascade contrôlée
+- Requêtes relationnelles optimisées
+- Protection contre les données orphelines
+
+---
+
+## 10. Scripts Raccourcis (Racine)
+
+Le fichier `package.json` à la racine du projet contient des scripts pratiques :
+```json
+{
+  "scripts": {
+    "dev": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "clean": "cd frontend && npm run clean",
+    "lint": "cd frontend && npm run lint"
+  }
+}
+```
+
+Vous pouvez lancer le frontend directement depuis la racine :
+```powershell
+npm run dev
+```
+
+---
+
+## 11. Environnement de Production
+
+### 11.1 Configuration Recommandée
+Pour un déploiement en production, modifiez `backend/.env` :
 ```env
 DEBUG=False
-SECRET_KEY=votre_clé_secrète_production
+DJANGO_SECRET_KEY=<votre-clé-secrète-forte>
 ALLOWED_HOSTS=votre-domaine.com,www.votre-domaine.com
-CORS_ALLOWED_ORIGINS=https://votre-domaine.com
+CORS_ALLOWED_ORIGINS=https://votre-domaine.com,https://www.votre-domaine.com
 ```
 
-2. **Collecter les fichiers statiques :**
+### 11.2 Base de Données de Production
+Pour la production, il est recommandé de migrer vers PostgreSQL :
+1. Installer `psycopg2-binary`
+2. Modifier la configuration DATABASE dans `settings.py`
+3. Exécuter les migrations sur la nouvelle base
 
-```bash
-cd backend
-python manage.py collectstatic
-```
+### 11.3 Stockage de Fichiers
+Pour la production, utilisez un stockage cloud (AWS S3, MinIO) :
+- Installer `django-storages`
+- Configurer les paramètres AWS S3 ou MinIO
+- Modifier `MEDIA_URL` et `MEDIA_ROOT`
 
-3. **Utiliser un serveur WSGI (gunicorn, uWSGI) :**
-
-```bash
+### 11.4 Serveur de Production
+Utilisez Gunicorn ou uWSGI pour servir Django :
+```powershell
 pip install gunicorn
-gunicorn grc_config.wsgi:application
+gunicorn grc_config.wsgi:application --bind 0.0.0.0:8000
 ```
 
-4. **Utiliser Nginx comme reverse proxy :**
-
-Configurer Nginx pour servir le frontend React et proxy les requêtes API vers Django.
-
-5. **Configurer HTTPS :**
-
-Utiliser Let's Encrypt ou un certificat SSL commercial.
+Pour le frontend, servez les fichiers statiques avec Nginx ou utilisez le serveur Express intégré.
 
 ---
 
-## Dépannage
+## 12. Support et Maintenance
 
-### Erreur : "ModuleNotFoundError: No module named 'django'"
+### 12.1 Logs et Débogage
+- **Backend Django :** Logs dans la console (développement) ou fichiers (production)
+- **Frontend React :** Console du navigateur (F12)
+- **Base de données :** `backend/db.sqlite3` (peut être inspecté avec DB Browser for SQLite)
 
-**Solution :** Assurez-vous que l'environnement virtuel est activé et que les dépendances sont installées.
-
-```bash
+### 12.2 Mises à jour
+Pour mettre à jour les dépendances :
+```powershell
+# Backend
 cd backend
-venv\Scripts\activate
-pip install -r requirements.txt
+pip install --upgrade -r requirements.txt
+
+# Frontend
+cd frontend
+npm update
 ```
 
-### Erreur : "django.db.utils.OperationalError: no such table"
-
-**Solution :** Exécutez les migrations.
-
-```bash
-cd backend
-python manage.py migrate
-```
-
-### Erreur CORS lors des requêtes API
-
-**Solution :** Vérifiez que `CORS_ALLOWED_ORIGINS` dans `.env` contient l'URL du frontend.
-
-### Le frontend ne se connecte pas au backend
-
-**Solution :** Vérifiez que :
-1. Le backend Django est en cours d'exécution
-2. L'URL de l'API dans `frontend/.env.local` est correcte
-3. Le port du backend (8000) n'est pas bloqué par un firewall
+### 12.3 Sauvegarde
+Sauvegardez régulièrement :
+- `backend/db.sqlite3` (base de données)
+- `backend/media/` (fichiers uploadés)
+- `backend/.env` (configuration sensible)
 
 ---
 
-## Ressources Supplémentaires
+## 13. Ressources Supplémentaires
 
-- **Documentation Django:** https://docs.djangoproject.com/
-- **Documentation Django REST Framework:** https://www.django-rest-framework.org/
-- **Documentation React:** https://react.dev/
-- **Documentation Vite:** https://vitejs.dev/
-
----
-
-## Support
-
-Pour toute question ou problème, consultez :
-1. Le rapport d'audit : `docs/AUDIT_REPORT.md`
-2. Le README principal : `README.md`
-3. Les commentaires dans le code source
+- **Documentation Django :** https://docs.djangoproject.com/
+- **Documentation DRF :** https://www.django-rest-framework.org/
+- **Documentation React :** https://react.dev/
+- **Documentation Vite :** https://vitejs.dev/
+- **Standard ISO 27001:2022 :** https://www.iso.org/standard/81275.html
 
 ---
 
-**Version du document:** 1.0  
-**Dernière mise à jour:** 2026-10-29
+**Dernière mise à jour du guide :** Novembre 2026
+**Version du projet :** 1.0.0
+**Développeur :** Hamani Massaoudou (APSI-NE / Niger Cyber Security)

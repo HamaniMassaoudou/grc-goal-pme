@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { 
   loadGRCState, 
   saveGRCState, 
@@ -46,34 +46,34 @@ import {
 import { Header } from './components/common/Header';
 import { Sidebar } from './components/common/Sidebar';
 
-// Vues des modules
-import { DashboardView } from './components/dashboard/DashboardView';
-import { RisksView } from './components/risks/RisksView';
-import { RiskModal } from './components/risks/RiskModal';
-import { RiskDetailsModal } from './components/risks/RiskDetailsModal';
-import { SoAView } from './components/soa/SoAView';
-import { SoAEditModal } from './components/soa/SoAEditModal';
-import { ActionsView } from './components/actions/ActionsView';
-import { ActionModal } from './components/actions/ActionModal';
-import { AssetsView } from './components/assets/AssetsView';
-import { AssetModal } from './components/assets/AssetModal';
-import { GovernanceView } from './components/governance/GovernanceView';
-import { OrganizationModal } from './components/governance/OrganizationModal';
-import { CollaboratorModal } from './components/governance/CollaboratorModal';
-import { TestScenarioModal } from './components/testGuide/TestScenarioModal';
-import { TestProtocolView } from './components/testGuide/TestProtocolView';
-import { DocumentationView } from './components/documentation/DocumentationView';
-import { PrintableReportModal } from './components/reports/PrintableReportModal';
+// Vues des modules (chargement différé par Code-Splitting)
+const DashboardView = lazy(() => import('./components/dashboard/DashboardView').then(m => ({ default: m.DashboardView })));
+const RisksView = lazy(() => import('./components/risks/RisksView').then(m => ({ default: m.RisksView })));
+const RiskModal = lazy(() => import('./components/risks/RiskModal').then(m => ({ default: m.RiskModal })));
+const RiskDetailsModal = lazy(() => import('./components/risks/RiskDetailsModal').then(m => ({ default: m.RiskDetailsModal })));
+const SoAView = lazy(() => import('./components/soa/SoAView').then(m => ({ default: m.SoAView })));
+const SoAEditModal = lazy(() => import('./components/soa/SoAEditModal').then(m => ({ default: m.SoAEditModal })));
+const ActionsView = lazy(() => import('./components/actions/ActionsView').then(m => ({ default: m.ActionsView })));
+const ActionModal = lazy(() => import('./components/actions/ActionModal').then(m => ({ default: m.ActionModal })));
+const AssetsView = lazy(() => import('./components/assets/AssetsView').then(m => ({ default: m.AssetsView })));
+const AssetModal = lazy(() => import('./components/assets/AssetModal').then(m => ({ default: m.AssetModal })));
+const GovernanceView = lazy(() => import('./components/governance/GovernanceView').then(m => ({ default: m.GovernanceView })));
+const OrganizationModal = lazy(() => import('./components/governance/OrganizationModal').then(m => ({ default: m.OrganizationModal })));
+const CollaboratorModal = lazy(() => import('./components/governance/CollaboratorModal').then(m => ({ default: m.CollaboratorModal })));
+const TestScenarioModal = lazy(() => import('./components/testGuide/TestScenarioModal').then(m => ({ default: m.TestScenarioModal })));
+const TestProtocolView = lazy(() => import('./components/testGuide/TestProtocolView').then(m => ({ default: m.TestProtocolView })));
+const DocumentationView = lazy(() => import('./components/documentation/DocumentationView').then(m => ({ default: m.DocumentationView })));
+const PrintableReportModal = lazy(() => import('./components/reports/PrintableReportModal').then(m => ({ default: m.PrintableReportModal })));
 
 // Nouveaux composants IAM & Authentification
 import { LoginScreen } from './components/auth/LoginScreen';
-import { IamView } from './components/iam/IamView';
-import { UserModal } from './components/iam/UserModal';
-import { ResetPasswordModal } from './components/iam/ResetPasswordModal';
-import { RoleModal } from './components/iam/RoleModal';
+const IamView = lazy(() => import('./components/iam/IamView').then(m => ({ default: m.IamView })));
+const UserModal = lazy(() => import('./components/iam/UserModal').then(m => ({ default: m.UserModal })));
+const ResetPasswordModal = lazy(() => import('./components/iam/ResetPasswordModal').then(m => ({ default: m.ResetPasswordModal })));
+const RoleModal = lazy(() => import('./components/iam/RoleModal').then(m => ({ default: m.RoleModal })));
 
 // Module de Notifications
-import { NotificationsView } from './components/notifications/NotificationsView';
+const NotificationsView = lazy(() => import('./components/notifications/NotificationsView').then(m => ({ default: m.NotificationsView })));
 import { AppNotification } from './types/notification';
 import { 
   getUnreadNotificationsCount, 
@@ -88,10 +88,86 @@ import {
   dispatchSoAGapNotification,
   dispatchSecurityAlertNotification
 } from './services/notifications';
+import { apiService } from './services/api';
 
 export default function App() {
   const [state, setState] = useState<GRCState>(() => loadGRCState());
   const [activeModule, setActiveModule] = useState<string>('dashboard');
+  const [isAuthChecked, setIsAuthChecked] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  // Vérification de l'authentification au chargement
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const accessToken = localStorage.getItem('access_token');
+        const refreshToken = localStorage.getItem('refresh_token');
+        const userId = localStorage.getItem('user_id');
+
+        if (!accessToken || !refreshToken) {
+          setIsAuthenticated(false);
+          setIsAuthChecked(true);
+          return;
+        }
+
+        // Tenter de rafraîchir le token pour vérifier sa validité
+        if (refreshToken) {
+          await apiService.refreshToken();
+        }
+        
+        // Si le rafraîchissement réussit, restaurer la session
+        if (userId) {
+          setState(prev => ({
+            ...prev,
+            authSession: {
+              isAuthenticated: true,
+              currentUserId: userId,
+              currentSessionId: prev.authSession.currentSessionId,
+              mfaPendingUserId: null
+            }
+          }));
+        }
+        
+        setIsAuthenticated(true);
+        setIsAuthChecked(true);
+        
+        // Rediriger vers le module demandé après login (deep linking)
+        const redirectModule = localStorage.getItem('redirect_after_login');
+        if (redirectModule) {
+          localStorage.removeItem('redirect_after_login');
+          setActiveModule(redirectModule);
+        }
+      } catch (error) {
+        console.error('Auth check failed:', error);
+        // Nettoyer les tokens invalides
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user_id');
+        setIsAuthenticated(false);
+        setIsAuthChecked(true);
+      }
+    };
+
+    checkAuth();
+  }, []);
+
+  // Hydratation initiale depuis le backend Django (SQLite) si disponible
+  useEffect(() => {
+    let isMounted = true;
+    if (isAuthenticated) {
+      apiService.fetchFullGRCState().then(backendData => {
+        if (isMounted && backendData) {
+          setState(prev => ({
+            ...prev,
+            ...backendData
+          }));
+        }
+      }).catch(err => {
+        console.info('Mode cache local / fallback:', err);
+      });
+    }
+    return () => { isMounted = false; };
+  }, [isAuthenticated]);
 
   // Utilisateur actuellement authentifié
   const currentAccount = state.accounts.find(u => u.id === state.authSession.currentUserId) || state.accounts[0];
@@ -181,6 +257,10 @@ export default function App() {
       auditLogs: [newLog, ...prev.auditLogs],
       notifications: [...securityNotifs, ...prev.notifications]
     }));
+    // Only send to backend if user is authenticated
+    if (state.authSession.isAuthenticated) {
+      apiService.createAuditLog(newLog).catch(() => {});
+    }
   };
 
   // ==================== GESTION DES NOTIFICATIONS ====================
@@ -189,6 +269,7 @@ export default function App() {
       ...prev,
       notifications: markNotificationAsRead(prev.notifications, notifId, currentAccount.id)
     }));
+    apiService.markNotificationAsRead(notifId).catch(() => {});
   };
 
   const handleMarkNotificationAsUnread = (notifId: string) => {
@@ -246,33 +327,33 @@ export default function App() {
   const nextActionCode = `ACT-${String(scopedActions.length + 1).padStart(2, '0')}`;
 
   // ==================== AUTHENTIFICATION ====================
-  const handleLoginSuccess = (user: UserAccount) => {
-    const newSessionToken = generateSessionToken();
-    const newSession: UserSession = {
-      id: `sess-${Date.now()}`,
-      userId: user.id,
-      token: newSessionToken,
-      createdAt: new Date().toISOString(),
-      lastActivityAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + state.securitySettings.sessionTimeoutMinutes * 60 * 1000).toISOString(),
-      ip: '192.168.1.10',
-      userAgent: navigator.userAgent,
-      device: 'Poste de travail (Navigateur)',
-      isCurrent: true
-    };
-
-    // Marquer les autres sessions comme non actuelles
-    const updatedSessions = state.sessions.map(s => ({ ...s, isCurrent: false }));
-
+  const handleLoginSuccess = async (loginResponse: { user: UserAccount; access?: string; refresh?: string } | UserAccount) => {
+    let user: UserAccount;
+    if ('user' in loginResponse) {
+      user = loginResponse.user;
+      if (loginResponse.access) localStorage.setItem('access_token', loginResponse.access);
+      if (loginResponse.refresh) localStorage.setItem('refresh_token', loginResponse.refresh);
+    } else {
+      user = loginResponse;
+      try {
+        const authRes = await apiService.login(user.email, 'PmeSecure2026!');
+        if (authRes.access) localStorage.setItem('access_token', authRes.access);
+        if (authRes.refresh) localStorage.setItem('refresh_token', authRes.refresh);
+      } catch (err) {
+        console.info('Connexion backend pour persona non bloquante:', err);
+      }
+    }
+    localStorage.setItem('user_id', user.id);
+    
+    // Mettre à jour l'état d'authentification
     setState(prev => ({
       ...prev,
       authSession: {
         isAuthenticated: true,
         currentUserId: user.id,
-        currentSessionId: newSession.id,
+        currentSessionId: prev.authSession.currentSessionId,
         mfaPendingUserId: null
       },
-      sessions: [newSession, ...updatedSessions],
       accounts: prev.accounts.map(u => u.id === user.id ? {
         ...u,
         failedLoginAttempts: 0,
@@ -281,10 +362,32 @@ export default function App() {
         lastLoginIp: '192.168.1.10'
       } : u)
     }));
+    
+    setIsAuthenticated(true);
+    
+    // Rediriger vers l'URL demandée si elle existe
+    const redirectUrl = localStorage.getItem('redirect_after_login');
+    if (redirectUrl) {
+      localStorage.removeItem('redirect_after_login');
+      // Note: comme l'app n'utilise pas React Router, on ne peut pas vraiment rediriger
+      // mais on pourrait utiliser activeModule pour simuler la navigation
+    }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await apiService.logout();
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+    
+    // Nettoyer les tokens du localStorage
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('user_id');
+    
     logSecurityEvent('LOGOUT', 'info', `Déconnexion volontaire de l'utilisateur ${currentAccount.name}`, 'authentification');
+    
     setState(prev => ({
       ...prev,
       authSession: {
@@ -295,6 +398,8 @@ export default function App() {
       },
       sessions: prev.sessions.filter(s => s.id !== prev.authSession.currentSessionId)
     }));
+    
+    setIsAuthenticated(false);
   };
 
   const handleSwitchUserPersona = (user: UserAccount) => {
@@ -336,11 +441,13 @@ export default function App() {
       };
       const newState = updateOrganizationInState(updated, state);
       setState(newState);
+      apiService.updateOrganization(updated.id, updated).catch(console.error);
       logSecurityEvent('ORGANIZATION_UPDATED' as any, 'info', `Mise à jour des paramètres de l’organisation ${updated.name}`, 'governance', updated.id);
     } else {
       // Création d'une nouvelle organisation (Cas B ou ajout)
       const { state: newState, createdOrg } = createNewOrganization(orgData, currentAccount, state);
       setState(newState);
+      apiService.createOrganization(createdOrg).catch(console.error);
       logSecurityEvent('ORGANIZATION_CREATED' as any, 'info', `Création d'une nouvelle organisation [${createdOrg.name}] par ${currentAccount.name}`, 'governance', createdOrg.id);
     }
     setIsOrgModalOpen(false);
@@ -365,11 +472,16 @@ export default function App() {
         return;
       }
       setState(res.state);
+      apiService.updateCollaborator(updated.id, updated).catch(console.error);
       logSecurityEvent('COLLABORATOR_UPDATED' as any, 'info', `Mise à jour du collaborateur ${collabData.fullName} (${collabData.email})`, 'collaborateurs', collabData.id);
     } else {
       // Ajout / Invitation
       const res = addCollaboratorToState(collabData, state, options);
       setState(res.state);
+      const addedCollab = res.state.collaborators[res.state.collaborators.length - 1];
+      if (addedCollab) {
+        apiService.createCollaborator(addedCollab).catch(console.error);
+      }
       logSecurityEvent('COLLABORATOR_INVITED' as any, 'info', `Invitation du collaborateur ${collabData.fullName} (${collabData.email}) - Rôle: ${collabData.roleId}`, 'collaborateurs');
     }
     setIsCollabModalOpen(false);
@@ -390,6 +502,7 @@ export default function App() {
       return;
     }
     setState(res.state);
+    apiService.deleteCollaborator(collabId).catch(console.error);
     logSecurityEvent('COLLABORATOR_REMOVED' as any, 'warning', `Suppression du collaborateur ${target.fullName} de l'organisation ${activeOrganization.name}`, 'collaborateurs', collabId);
   };
 
@@ -427,17 +540,10 @@ export default function App() {
     userData: { name: string; email: string; password: string; jobTitle: string; phone?: string },
     orgData: { name: string; sector: string; size: string; phone?: string; grcScope?: string }
   ) => {
-    const existingUser = state.accounts.find(u => u.email.toLowerCase() === userData.email.toLowerCase());
-    let targetUser: UserAccount;
-
-    if (existingUser) {
-      targetUser = existingUser;
-    } else {
-      const salt = generateSalt();
-      const hash = await hashPassword(userData.password, salt);
+    try {
+      // Créer l'utilisateur via l'API backend
       const nameParts = userData.name.trim().split(' ');
-      targetUser = {
-        id: `user-${Date.now().toString(36)}`,
+      const newUser = await apiService.createUser({
         firstName: nameParts[0] || 'Admin',
         lastName: nameParts.slice(1).join(' ') || 'PME',
         name: userData.name,
@@ -445,47 +551,55 @@ export default function App() {
         phone: userData.phone || '',
         jobTitle: userData.jobTitle || 'Administrateur Organisation',
         department: 'Direction Générale',
-        organizationId: '',
         organizationIds: [],
         organizationName: orgData.name,
         roleIds: ['role-org-admin'],
         status: 'actif',
-        passwordSalt: salt,
-        passwordHash: hash,
         mustChangePassword: false,
         mfaEnabled: false,
-        failedLoginAttempts: 0,
-        lockedUntil: null,
-        createdAt: new Date().toISOString().slice(0, 10),
-        lastLoginAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
-        lastLoginIp: '192.168.1.10',
         avatarColor: 'bg-[#0B3B7B]'
-      };
-      state.accounts.push(targetUser);
+      }, userData.password);
+
+      // Créer l'organisation via l'API backend
+      const orgResponse = await apiService.request('/organizations/', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: orgData.name,
+          sector: orgData.sector || 'Services numériques & Conseil',
+          size: orgData.size || '15 collaborateurs (TPE/PME)',
+          phone: orgData.phone || '',
+          contact_name: newUser.name,
+          contact_email: newUser.email,
+          security_officer: `${newUser.name} (Référent GRC)`,
+          description: `Espace GRC de ${orgData.name} pour le pilotage de la sécurité et la conformité ISO 27001.`,
+          grc_scope: orgData.grcScope || 'Système d\'information, postes de travail, facturation et données clients'
+        })
+      });
+
+      if (!orgResponse.ok) {
+        throw new Error('Échec de création de l\'organisation');
+      }
+
+      const createdOrg = await orgResponse.json();
+
+      // Mettre à jour l'utilisateur avec l'organization_id
+      await apiService.updateUser(newUser.id, {
+        organization_id: createdOrg.id,
+        organizationIds: [createdOrg.id],
+        organizationName: createdOrg.name
+      });
+
+      // Connecter l'utilisateur avec ses vrais identifiants
+      const loginResponse = await apiService.login(userData.email, userData.password);
+      handleLoginSuccess(loginResponse);
+      logSecurityEvent('ORGANIZATION_CREATED' as any, 'info', `Nouvelle inscription et création d'organisation : ${createdOrg.name} (${userData.email})`, 'organisation', createdOrg.id);
+
+    } catch (error) {
+      console.error('Erreur lors de la création de l\'organisation:', error);
+      alert('Une erreur est survenue lors de la création de votre compte. Veuillez réessayer.');
     }
-
-    // Créer l'organisation et rattacher l'utilisateur
-    const { state: newState, createdOrg } = createNewOrganization(
-      {
-        name: orgData.name,
-        sector: orgData.sector || 'Services numériques & Conseil',
-        size: orgData.size || '15 collaborateurs (TPE/PME)',
-        phone: orgData.phone || '',
-        contactName: targetUser.name,
-        contactEmail: targetUser.email,
-        securityOfficer: `${targetUser.name} (Référent GRC)`,
-        description: `Espace GRC de ${orgData.name} pour le pilotage de la sécurité et la conformité ISO 27001.`,
-        grcScope: orgData.grcScope || 'Système d’information, postes de travail, facturation et données clients'
-      },
-      targetUser,
-      state
-    );
-
-    const refreshedUser = newState.accounts.find(u => u.id === targetUser.id) || targetUser;
-    setState(newState);
-    handleLoginSuccess(refreshedUser);
-    logSecurityEvent('ORGANIZATION_CREATED' as any, 'info', `Nouvelle inscription et création d'organisation : ${createdOrg.name} (${targetUser.email})`, 'organisation', createdOrg.id);
   };
+
 
   // ==================== GESTION DES UTILISATEURS (IAM) ====================
   const handleSaveUserAccount = async (userData: Partial<UserAccount>, plainPassword?: string) => {
@@ -505,6 +619,7 @@ export default function App() {
         ...prev,
         accounts: prev.accounts.map(u => u.id === userData.id ? { ...u, ...userData } as UserAccount : u)
       }));
+      apiService.updateUser(userData.id, userData).catch(console.error);
       logSecurityEvent('USER_UPDATED', 'info', `Mise à jour du profil utilisateur : ${userData.name || userData.id}`, 'users', userData.id);
     } else {
       // Création
@@ -542,6 +657,7 @@ export default function App() {
         ...prev,
         accounts: [...prev.accounts, newUser]
       }));
+      apiService.createUser(newUser, pwd).catch(console.error);
       logSecurityEvent('USER_CREATED', 'info', `Création du nouveau compte : ${newUser.name} (${newUser.email})`, 'users', newUser.id);
     }
 
@@ -569,6 +685,7 @@ export default function App() {
         ? prev.sessions.filter(s => s.userId !== userId) 
         : prev.sessions
     }));
+    apiService.updateUser(userId, { status: newStatus }).catch(console.error);
 
     logSecurityEvent(
       'USER_STATUS_CHANGED', 
@@ -632,6 +749,7 @@ export default function App() {
       accounts: prev.accounts.filter(u => u.id !== userId),
       sessions: prev.sessions.filter(s => s.userId !== userId)
     }));
+    apiService.deleteUser(userId).catch(console.error);
 
     logSecurityEvent('USER_DELETED', 'critical', `Suppression définitive du compte utilisateur ${userId}`, 'users', userId);
   };
@@ -648,6 +766,7 @@ export default function App() {
         ...prev,
         roles: prev.roles.map(r => r.id === roleData.id ? { ...r, ...roleData } as RoleDefinition : r)
       }));
+      apiService.updateRole(roleData.id, roleData).catch(console.error);
       logSecurityEvent('ROLE_UPDATED', 'info', `Mise à jour des permissions du rôle : ${roleData.name}`, 'roles', roleData.id);
     } else {
       const newRole: RoleDefinition = {
@@ -677,6 +796,7 @@ export default function App() {
         ...prev,
         roles: [...prev.roles, newRole]
       }));
+      apiService.createRole(newRole).catch(console.error);
       logSecurityEvent('ROLE_CREATED', 'info', `Création du nouveau rôle personnalisé : ${newRole.name}`, 'roles', newRole.id);
     }
 
@@ -703,6 +823,7 @@ export default function App() {
       ...prev,
       roles: prev.roles.filter(r => r.id !== roleId)
     }));
+    apiService.deleteRole(roleId).catch(console.error);
     logSecurityEvent('ROLE_DELETED', 'warning', `Suppression du rôle personnalisé ${roleId}`, 'roles', roleId);
   };
 
@@ -729,6 +850,7 @@ export default function App() {
       ...prev,
       securitySettings: newSettings
     }));
+    apiService.updateSecuritySettings(newSettings).catch(console.error);
     logSecurityEvent('SECURITY_SETTINGS_UPDATED', 'info', `Mise à jour de la politique de sécurité des mots de passe et sessions`, 'securite');
   };
 
@@ -754,6 +876,7 @@ export default function App() {
           notifications: [...riskNotifs, ...prev.notifications]
         };
       });
+      apiService.updateRisk(riskData.id, riskData).catch(console.error);
       logSecurityEvent('RISK_MODIFIED' as any, 'info', `Mise à jour du risque ${riskData.code} : ${riskData.title}`, 'risks', riskData.id);
     } else {
       const newRisk: Risk = {
@@ -788,6 +911,7 @@ export default function App() {
           notifications: [...riskNotifs, ...prev.notifications]
         };
       });
+      apiService.createRisk(newRisk).catch(console.error);
       logSecurityEvent('RISK_MODIFIED' as any, 'info', `Création du risque ${newRisk.code} : ${newRisk.title}`, 'risks', newRisk.id);
     }
     setIsRiskModalOpen(false);
@@ -816,6 +940,7 @@ export default function App() {
         notifications: [...soaNotifs, ...prev.notifications]
       };
     });
+    apiService.updateSoaControl(updatedControl.id, updatedControl).catch(console.error);
     logSecurityEvent('SOA_UPDATED' as any, 'info', `Mise à jour de la mesure SoA ${updatedControl.code} (Applicable: ${updatedControl.isApplicable}, État: ${updatedControl.implementationStatus})`, 'soa', updatedControl.code);
     setIsSoAModalOpen(false);
     setEditingControl(null);
@@ -842,6 +967,7 @@ export default function App() {
           notifications: [...actionNotifs, ...prev.notifications]
         };
       });
+      apiService.updateAction(actionData.id, actionData).catch(console.error);
     } else {
       const newAction: CorrectiveAction = {
         id: `act-${Date.now()}`,
@@ -868,6 +994,7 @@ export default function App() {
           notifications: [...actionNotifs, ...prev.notifications]
         };
       });
+      apiService.createAction(newAction).catch(console.error);
     }
     setIsActionModalOpen(false);
     setEditingAction(null);
@@ -879,6 +1006,7 @@ export default function App() {
       return;
     }
 
+    const todayStr = new Date().toISOString().slice(0, 10);
     setState(prev => {
       const updatedActions = prev.actions.map(a => 
         a.id === actionId 
@@ -886,7 +1014,7 @@ export default function App() {
               ...a, 
               status: 'cloturee' as any, 
               evidenceOfClosure: proof,
-              closedAt: new Date().toISOString().slice(0, 10) 
+              closedAt: todayStr 
             } 
           : a
       );
@@ -901,6 +1029,11 @@ export default function App() {
         notifications: [...closeNotifs, ...prev.notifications]
       };
     });
+    apiService.updateAction(actionId, {
+      status: 'cloturee',
+      evidenceOfClosure: proof,
+      closedAt: todayStr
+    }).catch(console.error);
     logSecurityEvent('ACTION_CLOSED' as any, 'info', `Clôture de l'action ${actionId} avec preuve enregistrée : ${proof}`, 'actions', actionId);
   };
 
@@ -918,6 +1051,7 @@ export default function App() {
         ...prev,
         assets: prev.assets.map(a => a.id === assetData.id ? { ...a, ...assetData } as Asset : a)
       }));
+      apiService.updateAsset(assetData.id, assetData).catch(console.error);
     } else {
       const newAsset: Asset = {
         id: `ast-${Date.now()}`,
@@ -934,6 +1068,7 @@ export default function App() {
         ...prev,
         assets: [...prev.assets, newAsset]
       }));
+      apiService.createAsset(newAsset).catch(console.error);
     }
     setIsAssetModalOpen(false);
     setEditingAsset(null);
@@ -979,6 +1114,7 @@ export default function App() {
         testSheets: updatedSheets
       };
     });
+    apiService.saveTestSheet(sheet).catch(console.error);
 
     logSecurityEvent(
       'TEST_PROTOCOL_SAVED' as any,
@@ -994,6 +1130,7 @@ export default function App() {
       ...prev,
       testSheets: (prev.testSheets || []).filter(s => s.id !== sheetId)
     }));
+    apiService.deleteTestSheet(sheetId).catch(console.error);
 
     logSecurityEvent(
       'TEST_PROTOCOL_DELETED' as any,
@@ -1013,7 +1150,13 @@ export default function App() {
   };
 
   // ==================== RENDU CONDITIONNEL : ÉCRAN DE CONNEXION ====================
-  if (!state.authSession.isAuthenticated) {
+  // Stocker le module actuel avant redirection pour deep linking
+  if (!isAuthenticated && isAuthChecked) {
+    // Stocker le module actuel pour redirection après login
+    if (activeModule !== 'dashboard') {
+      localStorage.setItem('redirect_after_login', activeModule);
+    }
+    
     return (
       <LoginScreen
         accounts={state.accounts}
@@ -1029,6 +1172,36 @@ export default function App() {
   }
 
   // ==================== RENDU PRINCIPAL DE L'APPLICATION ====================
+  
+  // Afficher un indicateur de chargement pendant la vérification d'authentification
+  if (!isAuthChecked) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-4 border-[#0B3B7B]"></div>
+          <p className="mt-4 text-sm text-slate-600 font-medium">Vérification de l'authentification...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Si non authentifié, afficher l'écran de login
+  if (!isAuthenticated) {
+    return (
+      <LoginScreen
+        accounts={state.accounts}
+        roles={state.roles}
+        securitySettings={state.securitySettings}
+        onLoginSuccess={handleLoginSuccess}
+        onRecordAudit={(eventType, severity, details, email) => {
+          logSecurityEvent(eventType, severity, details, 'authentification', email);
+        }}
+        onRegisterNewOrg={handleRegisterNewOrg}
+      />
+    );
+  }
+
+  // Si authentifié, afficher l'application principale
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
       
@@ -1074,6 +1247,12 @@ export default function App() {
 
         {/* Zone de contenu principale */}
         <main className="flex-1 min-w-0">
+          <Suspense fallback={
+            <div className="flex flex-col items-center justify-center min-h-[400px] p-8 space-y-3 bg-white rounded-xl border border-slate-200">
+              <div className="w-8 h-8 border-3 border-[#0B3B7B] border-t-transparent rounded-full animate-spin" />
+              <span className="text-xs font-semibold text-slate-700">Chargement du module GRC-Goal...</span>
+            </div>
+          }>
           {activeModule === 'dashboard' && (
             <DashboardView
               organization={activeOrganization}
@@ -1114,6 +1293,8 @@ export default function App() {
           {activeModule === 'soa' && (
             <SoAView
               soa={scopedSoA}
+              organizationName={activeOrganization?.name}
+              grcScope={activeOrganization?.grcScope}
               onEditControl={(c) => {
                 if (!hasPermission(currentAccount, state.roles, 'soa', 'update')) {
                   alert("Accès refusé : Votre rôle ne permet pas la modification de la Déclaration d'Applicabilité.");
@@ -1282,6 +1463,7 @@ export default function App() {
           {activeModule === 'documentation' && (
             <DocumentationView />
           )}
+          </Suspense>
         </main>
       </div>
 
@@ -1300,7 +1482,7 @@ export default function App() {
       </footer>
 
       {/* ==================== MODALES ==================== */}
-
+      <Suspense fallback={null}>
       {/* Modale Utilisateur (IAM) */}
       <UserModal
         isOpen={isUserModalOpen}
@@ -1452,6 +1634,7 @@ export default function App() {
         roles={state.roles}
         isLastAdmin={editingCollab ? isLastActiveAdmin(activeOrganization.id, editingCollab.id, state) : false}
       />
+      </Suspense>
 
     </div>
   );

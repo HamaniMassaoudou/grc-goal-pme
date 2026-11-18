@@ -229,3 +229,22 @@ export interface UserTestSheet {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface EvidenceFile {
+  id: string;
+  title: string;
+  filename: string;
+  fileSize: number;
+  formattedSize: string;
+  mimeType: string;
+  sha256Hash: string;
+  linkedType: 'soa_control' | 'corrective_action' | 'risk' | 'general';
+  linkedId: string;
+  notes?: string;
+  uploadedByName?: string;
+  uploadedByEmail?: string;
+  organizationId?: string;
+  createdAt: string;
+  updatedAt: string;
+  fileUrl?: string;
+}

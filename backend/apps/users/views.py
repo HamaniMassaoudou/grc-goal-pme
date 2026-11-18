@@ -10,22 +10,69 @@ from .serializers import (
     RoleDefinitionSerializer, UserSessionSerializer, SecurityAuditLogSerializer,
     SecuritySettingsSerializer, LoginSerializer
 )
+from .permissions import (
+    CanManageUsers, CanManageRoles, CanViewAuditLogs, IsSuperAdmin,
+    IsOrganizationMember
+)
 
 
 class RoleDefinitionViewSet(viewsets.ModelViewSet):
     queryset = RoleDefinition.objects.all()
     serializer_class = RoleDefinitionSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanManageRoles]
     filterset_fields = ['is_system', 'is_active']
     search_fields = ['code', 'name']
+    
+    def perform_update(self, serializer):
+        # Empêcher la modification des rôles système
+        instance = self.get_object()
+        if instance.is_system and not (self.request.user.is_superuser or self.request.user.is_staff):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Les rôles système ne peuvent pas être modifiés.")
+        serializer.save()
+    
+    def perform_destroy(self, instance):
+        # Empêcher la suppression des rôles système
+        if instance.is_system and not (self.request.user.is_superuser or self.request.user.is_staff):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Les rôles système ne peuvent pas être supprimés.")
+        instance.delete()
 
 
 class UserAccountViewSet(viewsets.ModelViewSet):
-    queryset = UserAccount.objects.all()
     serializer_class = UserAccountSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanManageUsers]
     filterset_fields = ['status', 'organization_id']
     search_fields = ['name', 'email']
+    
+    def get_permissions(self):
+        """
+        Permettre la création publique d'utilisateur et la connexion.
+        Les autres actions nécessitent une authentification.
+        """
+        if self.action in ['create', 'login']:
+            return [AllowAny()]
+        return [IsAuthenticated(), CanManageUsers()]
+    
+    def get_queryset(self):
+        """
+        Filtrer les utilisateurs selon l'organisation de l'utilisateur connecté.
+        Les super-administrateurs voient tous les utilisateurs.
+        """
+        user = self.request.user
+
+        # Super-administrateurs voient tous les utilisateurs
+        if user.is_superuser or user.is_staff:
+            return UserAccount.objects.all()
+
+        # Filtrer par organisation (ForeignKey)
+        if user.organization:
+            return UserAccount.objects.filter(organization=user.organization)
+        # Fallback pour les utilisateurs sans organisation
+        ids = user.organization_ids or []
+        if ids:
+            return UserAccount.objects.filter(organization_id__in=ids)
+        return UserAccount.objects.none()
     
     def get_serializer_class(self):
         if self.action == 'create':
@@ -33,6 +80,22 @@ class UserAccountViewSet(viewsets.ModelViewSet):
         elif self.action in ['update', 'partial_update']:
             return UserAccountUpdateSerializer
         return UserAccountSerializer
+    
+    def perform_update(self, serializer):
+        # Empêcher un utilisateur de se retirer ses propres droits d'admin
+        if self.request.user.id == self.get_object().id:
+            new_role_ids = serializer.validated_data.get('role_ids', [])
+            if 'role-super-admin' in self.get_object().role_ids and 'role-super-admin' not in new_role_ids:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("Vous ne pouvez pas retirer votre propre rôle Super Administrateur.")
+        serializer.save()
+    
+    def perform_destroy(self, instance):
+        # Empêcher un utilisateur de se supprimer lui-même
+        if instance.id == self.request.user.id:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Vous ne pouvez pas supprimer votre propre compte.")
+        instance.delete()
     
     @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def login(self, request):
@@ -114,12 +177,27 @@ class UserSessionViewSet(viewsets.ModelViewSet):
 
 
 class SecurityAuditLogViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = SecurityAuditLog.objects.all()
     serializer_class = SecurityAuditLogSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanViewAuditLogs]
     filterset_fields = ['event_type', 'severity', 'actor_id']
     search_fields = ['actor_name', 'details']
     ordering = ['-timestamp']
+    
+    def get_queryset(self):
+        """
+        Filtrer les logs selon l'organisation de l'utilisateur connecté.
+        Les super-administrateurs voient tous les logs.
+        """
+        user = self.request.user
+        
+        # Super-administrateurs voient tous les logs
+        if user.is_superuser or user.is_staff:
+            return SecurityAuditLog.objects.all()
+        
+        # Filtrer par organisation (via actor_id correspondant aux utilisateurs de l'org)
+        user_orgs = user.organization_ids or [user.organization_id]
+        org_users = UserAccount.objects.filter(organization_id__in=user_orgs).values_list('id', flat=True)
+        return SecurityAuditLog.objects.filter(actor_id__in=org_users)
 
 
 class SecuritySettingsViewSet(viewsets.ModelViewSet):

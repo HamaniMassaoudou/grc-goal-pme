@@ -15,17 +15,22 @@ import {
 } from 'lucide-react';
 import { SoAControl, ImplementationStatus } from '../../types/grc';
 import { exportSoAToCSV } from '../../services/storage';
+import { exportOfficialSoAToPDF } from '../../services/pdfExport';
 
 interface SoAViewProps {
   soa: SoAControl[];
   onEditControl: (control: SoAControl) => void;
   onCreateActionForGap: (control: SoAControl) => void;
+  organizationName?: string;
+  grcScope?: string;
 }
 
 export const SoAView: React.FC<SoAViewProps> = ({
   soa,
   onEditControl,
-  onCreateActionForGap
+  onCreateActionForGap,
+  organizationName = 'PME Démonstration (Sirba Communication SARL)',
+  grcScope = "Système d'information, postes de travail, messagerie et base de données clients"
 }) => {
   const [selectedDomain, setSelectedDomain] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -119,6 +124,18 @@ export const SoAView: React.FC<SoAViewProps> = ({
     exportSoAToCSV(soa);
   };
 
+  const handleExportOfficialPDF = () => {
+    exportOfficialSoAToPDF({
+      organizationName,
+      grcScope,
+      controls: soa,
+      reviewerName: 'Hamani Massaoudou (RSSI)',
+      approverName: 'Abdoul Salam Issifi (Gérant)',
+      version: 'v1.0 (Audit Officiel 2026)',
+      reviewDate: new Date().toISOString().slice(0, 10)
+    });
+  };
+
   return (
     <div className="space-y-5">
       
@@ -131,6 +148,15 @@ export const SoAView: React.FC<SoAViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleExportOfficialPDF}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-[#0B3B7B] hover:bg-[#082a59] rounded-lg transition shadow-xs"
+            title="Générer la Déclaration d'Applicabilité formelle ISO/IEC 27001:2022 pour l'auditeur"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-white" />
+            <span>Exporter SoA Officiel (PDF)</span>
+          </button>
+
           <button
             onClick={handleExportCSV}
             className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition shadow-xs"

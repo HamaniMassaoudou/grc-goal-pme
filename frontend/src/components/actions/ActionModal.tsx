@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, CheckCircle2, AlertTriangle, ShieldCheck, FileCheck } from 'lucide-react';
 import { CorrectiveAction, ActionPriority, ActionStatus, Risk, SoAControl } from '../../types/grc';
+import { EvidenceManager } from '../common/EvidenceManager';
 
 interface ActionModalProps {
   isOpen: boolean;
@@ -306,6 +307,23 @@ export const ActionModal: React.FC<ActionModalProps> = ({
               placeholder="Ex. Procès-verbal de test PV-RESTORE-2026-10-18.pdf ou capture console validée..."
               className="w-full px-3 py-1.5 text-xs rounded-lg border border-emerald-300 bg-white focus:border-emerald-500 focus:outline-none"
             />
+
+            {/* Coffre-fort de preuves numériques scellées */}
+            {initialAction?.id && (
+              <div className="pt-2">
+                <EvidenceManager
+                  linkedType="corrective_action"
+                  linkedId={initialAction.id}
+                  titleContext={`Action ${initialAction.code}`}
+                  organizationId={initialAction.organizationId}
+                  onEvidenceChange={() => {
+                    if (!evidenceOfClosure) {
+                      setEvidenceOfClosure(`Preuve scellée SHA-256 attachée`);
+                    }
+                  }}
+                />
+              </div>
+            )}
           </div>
 
           {/* Nouveau commentaire / note de suivi */}

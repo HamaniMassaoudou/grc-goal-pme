@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, CheckSquare, ShieldCheck, ArrowRight, PlusCircle, FileText } from 'lucide-react';
 import { SoAControl, ImplementationStatus } from '../../types/grc';
+import { EvidenceManager } from '../common/EvidenceManager';
 
 interface SoAEditModalProps {
   isOpen: boolean;
@@ -201,6 +202,19 @@ export const SoAEditModal: React.FC<SoAEditModalProps> = ({
                   className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-300 focus:border-blue-500 focus:outline-none"
                 />
               </div>
+
+              {/* Coffre-fort de preuves numériques scellées SHA-256 */}
+              <EvidenceManager
+                linkedType="soa_control"
+                linkedId={control.code}
+                titleContext={`Mesure ${control.code}`}
+                organizationId={control.organizationId}
+                onEvidenceChange={() => {
+                  if (!evidenceRef) {
+                    setEvidenceRef(`Preuve scellée SHA-256 pour ${control.code}`);
+                  }
+                }}
+              />
 
               {/* Écart constaté (Gap Analysis) */}
               <div className="p-4 bg-orange-50/50 rounded-xl border border-orange-200 space-y-2">

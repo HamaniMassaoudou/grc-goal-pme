@@ -44,7 +44,13 @@ class UserAccount(AbstractBaseUser, PermissionsMixin):
     department = models.CharField(max_length=200, blank=True, verbose_name='Département')
     
     # Organization relationships
-    organization_id = models.CharField(max_length=100, blank=True)
+    organization = models.ForeignKey(
+        'organizations.Organization',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='members'
+    )
     organization_ids = models.JSONField(default=list, blank=True)
     organization_name = models.CharField(max_length=200, blank=True)
     
@@ -195,6 +201,7 @@ class SecurityAuditLog(models.Model):
     details = models.TextField()
     
     ip_address = models.CharField(max_length=50, default='192.168.1.10')
+    user_agent = models.TextField(blank=True, null=True)  # Capture du user-agent pour plus de contexte
     
     class Meta:
         db_table = 'security_audit_logs'
@@ -226,3 +233,47 @@ class SecuritySettings(models.Model):
     
     def __str__(self):
         return f"Security Settings (ID: {self.id})"
+
+
+class InvitationToken(models.Model):
+    """
+    Token d'invitation pour l'inscription de nouveaux utilisateurs.
+    """
+    id = models.AutoField(primary_key=True)
+    token = models.CharField(max_length=255, unique=True, db_index=True)
+    email = models.EmailField()
+    organization_id = models.CharField(max_length=50)
+    role_ids = models.JSONField(default=list)  # Liste des rôles à attribuer
+    invited_by = models.CharField(max_length=50)  # ID de l'utilisateur qui a invité
+    invited_by_name = models.CharField(max_length=255)
+    
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ('pending', 'En attente'),
+            ('accepted', 'Accepté'),
+            ('expired', 'Expiré'),
+            ('revoked', 'Révoqué')
+        ],
+        default='pending'
+    )
+    
+    expires_at = models.DateTimeField()
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'invitation_tokens'
+        verbose_name = 'Token d\'invitation'
+        verbose_name_plural = 'Tokens d\'invitation'
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"Invitation pour {self.email} ({self.status})"
+    
+    def is_valid(self):
+        from django.utils import timezone
+        return (
+            self.status == 'pending' and
+            self.expires_at > timezone.now()
+        )

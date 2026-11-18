@@ -43,6 +43,12 @@ class SoAControl(models.Model):
     )
     
     evidence_ref = models.CharField(max_length=500, blank=True, verbose_name='Référence de preuve')
+    evidence_file = models.FileField(
+        upload_to='soa_evidences/%Y/%m/',
+        blank=True,
+        null=True,
+        verbose_name='Fichier de preuve (PDF/Image)'
+    )
     gap_description = models.TextField(blank=True, verbose_name='Écart constaté')
     
     linked_action_id = models.CharField(max_length=100, blank=True, null=True)

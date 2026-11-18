@@ -55,6 +55,7 @@ class CorrectiveAction(models.Model):
     status = models.CharField(max_length=20, choices=ACTION_STATUS_CHOICES, default='a_faire')
     
     evidence_of_closure = models.TextField(blank=True, verbose_name='Preuve de clôture')
+    comments = models.JSONField(default=list, blank=True, verbose_name='Commentaires')
     
     organization = models.ForeignKey(
         'organizations.Organization',

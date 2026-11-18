@@ -16,6 +16,6 @@ class SoAControlCreateSerializer(serializers.ModelSerializer):
         fields = [
             'code', 'title', 'domain', 'description', 'is_applicable',
             'justification', 'implementation_status', 'maturity_level',
-            'evidence_ref', 'gap_description', 'linked_action_id',
+            'evidence_ref', 'evidence_file', 'gap_description', 'linked_action_id',
             'last_review_date', 'reviewed_by', 'organization'
         ]

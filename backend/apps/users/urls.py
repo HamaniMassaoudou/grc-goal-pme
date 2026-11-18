@@ -1,5 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     UserAccountViewSet, RoleDefinitionViewSet, UserSessionViewSet,
     SecurityAuditLogViewSet, SecuritySettingsViewSet
@@ -13,5 +14,6 @@ router.register(r'audit-logs', SecurityAuditLogViewSet, basename='securityauditl
 router.register(r'security-settings', SecuritySettingsViewSet, basename='securitysettings')
 
 urlpatterns = [
+    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('', include(router.urls)),
 ]
